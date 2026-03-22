@@ -6,6 +6,7 @@ import { useDesktopPlayerLogic } from './hooks/useDesktopPlayerLogic';
 import { useHlsPlayer } from './hooks/useHlsPlayer';
 import { useAutoSkip } from './hooks/useAutoSkip';
 import { useStallDetection } from './hooks/useStallDetection';
+import { useVideoResolution } from './hooks/useVideoResolution';
 import { DesktopControlsWrapper } from './desktop/DesktopControlsWrapper';
 import { DesktopOverlayWrapper } from './desktop/DesktopOverlayWrapper';
 import { DanmakuCanvas } from './DanmakuCanvas';
@@ -30,6 +31,8 @@ interface DesktopVideoPlayerProps {
   // Danmaku props
   videoTitle?: string;
   episodeName?: string;
+  // Resolution callback
+  onResolutionDetected?: (info: import('./hooks/useVideoResolution').VideoResolutionInfo) => void;
 }
 
 export function DesktopVideoPlayer({
@@ -45,11 +48,22 @@ export function DesktopVideoPlayer({
   isReversed = false,
   videoTitle = '',
   episodeName = '',
+  onResolutionDetected,
 }: DesktopVideoPlayerProps) {
   const { refs, data, actions } = useDesktopPlayerState();
   const { fullscreenType: settingsFullscreenType } = usePlayerSettings();
   const isIOS = useIsIOS();
   const isMobile = useIsMobile();
+
+  // Detect actual video resolution
+  const videoResolution = useVideoResolution(refs.videoRef);
+
+  // Notify parent when resolution is detected
+  React.useEffect(() => {
+    if (videoResolution && onResolutionDetected) {
+      onResolutionDetected(videoResolution);
+    }
+  }, [videoResolution, onResolutionDetected]);
 
   // Danmaku
   const { danmakuEnabled, setDanmakuEnabled, comments: danmakuComments } = useDanmaku({
@@ -192,7 +206,7 @@ export function DesktopVideoPlayer({
       ref={containerRef}
       className={`kvideo-container relative aspect-video bg-black rounded-[var(--radius-2xl)] group ${data.isFullscreen && fullscreenType === 'window' ? 'is-web-fullscreen' : ''
         } ${shouldForceLandscape ? 'force-landscape' : ''}`}
-      onMouseMove={handleMouseMove}
+      onMouseMove={() => { handleMouseMove(); }}
       onMouseLeave={() => isPlaying && setShowControls(false)}
     >
       {/* Clipping Wrapper for video and overlays - Restores the 'Liquid Glass' rounded look */}
@@ -229,6 +243,16 @@ export function DesktopVideoPlayer({
               isPlaying={isPlaying}
               duration={duration}
             />
+          )}
+
+          {/* Video Resolution Badge - follows controls bar visibility */}
+          {videoResolution && (
+            <div className={`absolute top-3 left-3 z-20 pointer-events-none transition-opacity duration-300 ${data.showControls ? 'opacity-80' : 'opacity-0'}`}>
+              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold text-white ${videoResolution.color}`}>
+                {videoResolution.label}
+                <span className="font-normal opacity-80">{videoResolution.width}x{videoResolution.height}</span>
+              </span>
+            </div>
           )}
 
           <DesktopOverlayWrapper

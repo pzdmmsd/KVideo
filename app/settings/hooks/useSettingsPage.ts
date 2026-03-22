@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { settingsStore, getDefaultSources, type SortOption, type SearchDisplayMode, type ProxyMode } from '@/lib/store/settings-store';
+import { settingsStore, getDefaultSources, type SortOption, type SearchDisplayMode, type ProxyMode, type LocaleOption } from '@/lib/store/settings-store';
 import type { VideoSource, SourceSubscription } from '@/lib/types';
 import {
     type ImportResult,
@@ -25,12 +25,16 @@ export function useSettingsPage() {
     const [fullscreenType, setFullscreenType] = useState<'auto' | 'native' | 'window'>('auto');
     const [proxyMode, setProxyMode] = useState<ProxyMode>('retry');
     const [rememberScrollPosition, setRememberScrollPosition] = useState(true);
+    const [locale, setLocale] = useState<LocaleOption>('zh-CN');
 
     // Danmaku settings
     const [danmakuApiUrl, setDanmakuApiUrl] = useState('');
     const [danmakuOpacity, setDanmakuOpacity] = useState(0.7);
     const [danmakuFontSize, setDanmakuFontSize] = useState(20);
     const [danmakuDisplayArea, setDanmakuDisplayArea] = useState(0.5);
+
+    // Content filter
+    const [blockedCategories, setBlockedCategories] = useState<string[]>([]);
 
     useEffect(() => {
         const settings = settingsStore.getSettings();
@@ -42,10 +46,12 @@ export function useSettingsPage() {
         setFullscreenType(settings.fullscreenType);
         setProxyMode(settings.proxyMode);
         setRememberScrollPosition(settings.rememberScrollPosition);
+        setLocale(settings.locale);
         setDanmakuApiUrl(settings.danmakuApiUrl);
         setDanmakuOpacity(settings.danmakuOpacity);
         setDanmakuFontSize(settings.danmakuFontSize);
         setDanmakuDisplayArea(settings.danmakuDisplayArea);
+        setBlockedCategories(settings.blockedCategories || []);
     }, []);
 
     const handleSourcesChange = (newSources: VideoSource[]) => {
@@ -256,6 +262,15 @@ export function useSettingsPage() {
         });
     };
 
+    const handleLocaleChange = (newLocale: LocaleOption) => {
+        setLocale(newLocale);
+        const currentSettings = settingsStore.getSettings();
+        settingsStore.saveSettings({
+            ...currentSettings,
+            locale: newLocale,
+        });
+    };
+
     const handleDanmakuApiUrlChange = (url: string) => {
         setDanmakuApiUrl(url);
         const currentSettings = settingsStore.getSettings();
@@ -290,6 +305,15 @@ export function useSettingsPage() {
         settingsStore.saveSettings({
             ...currentSettings,
             danmakuDisplayArea: value,
+        });
+    };
+
+    const handleBlockedCategoriesChange = (categories: string[]) => {
+        setBlockedCategories(categories);
+        const currentSettings = settingsStore.getSettings();
+        settingsStore.saveSettings({
+            ...currentSettings,
+            blockedCategories: categories,
         });
     };
 
@@ -343,6 +367,8 @@ export function useSettingsPage() {
         handleProxyModeChange,
         rememberScrollPosition,
         handleRememberScrollPositionChange,
+        locale,
+        handleLocaleChange,
         danmakuApiUrl,
         handleDanmakuApiUrlChange,
         danmakuOpacity,
@@ -351,5 +377,7 @@ export function useSettingsPage() {
         handleDanmakuFontSizeChange,
         danmakuDisplayArea,
         handleDanmakuDisplayAreaChange,
+        blockedCategories,
+        handleBlockedCategoriesChange,
     };
 }

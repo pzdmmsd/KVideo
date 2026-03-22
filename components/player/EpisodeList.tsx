@@ -9,6 +9,9 @@ import { LatencyBadge } from '@/components/ui/LatencyBadge';
 import { Button } from '@/components/ui/Button';
 import { useKeyboardNavigation } from '@/lib/hooks/useKeyboardNavigation';
 import { settingsStore } from '@/lib/store/settings-store';
+import { extractQualityLabel } from '@/lib/utils/video';
+import type { VideoResolutionInfo } from './hooks/useVideoResolution';
+import type { ResolutionInfo } from '@/lib/hooks/useResolutionProbe';
 
 interface Episode {
   name?: string;
@@ -22,6 +25,7 @@ export interface SourceInfo {
   latency?: number;
   pic?: string;
   typeName?: string;
+  remarks?: string;
 }
 
 interface EpisodeListProps {
@@ -34,6 +38,10 @@ interface EpisodeListProps {
   sources?: SourceInfo[];
   currentSource?: string;
   onSourceChange?: (source: SourceInfo) => void;
+  // Actual detected resolution for the current source
+  currentResolution?: VideoResolutionInfo | null;
+  // Probed resolutions for all sources (key: "source:id")
+  sourceResolutions?: Record<string, ResolutionInfo | null>;
 }
 
 export function EpisodeList({
@@ -45,6 +53,8 @@ export function EpisodeList({
   sources,
   currentSource,
   onSourceChange,
+  currentResolution,
+  sourceResolutions,
 }: EpisodeListProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -56,6 +66,22 @@ export function EpisodeList({
   const [isLoadingLatency, setIsLoadingLatency] = useState(false);
 
   const showSourceSelector = sources && sources.length > 1 && onSourceChange;
+
+  // Helper: get best resolution badge for a source
+  const getResBadge = useCallback((source: SourceInfo, isCurrent: boolean) => {
+    // For current source, prefer actual detected resolution from video element
+    if (isCurrent && currentResolution) {
+      return { label: currentResolution.label, color: currentResolution.color };
+    }
+    // Check probed resolution from m3u8 manifest
+    const probeKey = `${source.source}:${source.id}`;
+    const probed = sourceResolutions?.[probeKey];
+    if (probed) {
+      return { label: probed.label, color: probed.color };
+    }
+    // Fall back to quality label parsed from remarks
+    return extractQualityLabel(source.remarks) || null;
+  }, [currentResolution, sourceResolutions]);
 
   // Current source info
   const currentSourceInfo = useMemo(() => {
@@ -226,6 +252,11 @@ export function EpisodeList({
               <span className="text-sm font-medium text-[var(--text-color)] truncate">
                 {currentSourceInfo?.sourceName || currentSourceInfo?.source || '当前来源'}
               </span>
+              {currentResolution && (
+                <span className={`inline-flex items-center px-1 py-0 rounded text-[9px] font-bold text-white ${currentResolution.color} flex-shrink-0`}>
+                  {currentResolution.label}
+                </span>
+              )}
               <Badge variant="primary" className="flex-shrink-0">{sources!.length}</Badge>
             </div>
             <Icons.ChevronDown
@@ -317,9 +348,20 @@ export function EpisodeList({
                                     </div>
                                   )}
                                   <div className="flex-1 min-w-0">
-                                    <div className="font-medium text-sm truncate">
+                                    <div className="font-medium text-sm truncate flex items-center gap-1.5">
                                       {source.sourceName || source.source}
+                                      {(() => {
+                                        const badge = getResBadge(source, isCurrent);
+                                        return badge ? (
+                                          <span className={`inline-flex items-center px-1 py-0 rounded text-[9px] font-bold text-white ${badge.color}`}>
+                                            {badge.label}
+                                          </span>
+                                        ) : null;
+                                      })()}
                                     </div>
+                                    {source.remarks && !extractQualityLabel(source.remarks) && (
+                                      <div className="text-[10px] text-[var(--text-color-secondary)] truncate mt-0.5">{source.remarks}</div>
+                                    )}
                                     {latency !== undefined && (
                                       <div className="mt-0.5">
                                         <LatencyBadge latency={latency} />
@@ -386,9 +428,20 @@ export function EpisodeList({
                                 </div>
                               )}
                               <div className="flex-1 min-w-0">
-                                <div className="font-medium text-sm truncate">
+                                <div className="font-medium text-sm truncate flex items-center gap-1.5">
                                   {source.sourceName || source.source}
+                                  {(() => {
+                                    const badge = getResBadge(source, isCurrent);
+                                    return badge ? (
+                                      <span className={`inline-flex items-center px-1 py-0 rounded text-[9px] font-bold text-white ${badge.color}`}>
+                                        {badge.label}
+                                      </span>
+                                    ) : null;
+                                  })()}
                                 </div>
+                                {source.remarks && !extractQualityLabel(source.remarks) && (
+                                  <div className="text-[10px] text-[var(--text-color-secondary)] truncate mt-0.5">{source.remarks}</div>
+                                )}
                                 {latency !== undefined && (
                                   <div className="mt-0.5">
                                     <LatencyBadge latency={latency} />

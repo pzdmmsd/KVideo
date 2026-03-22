@@ -7,6 +7,8 @@ import { DEFAULT_SOURCES } from '@/lib/api/default-sources';
 import { PREMIUM_SOURCES } from '@/lib/api/premium-sources';
 import { createSubscription } from '@/lib/utils/source-import-utils';
 
+export type LocaleOption = 'zh-CN' | 'zh-TW';
+
 export type SortOption =
   | 'default'
   | 'relevance'
@@ -52,6 +54,8 @@ export interface AppSettings {
   danmakuOpacity: number; // 0.1 - 1.0
   danmakuFontSize: number; // px
   danmakuDisplayArea: number; // 0.25 | 0.5 | 0.75 | 1.0
+  locale: LocaleOption; // 'zh-CN' (Simplified) or 'zh-TW' (Traditional)
+  blockedCategories: string[]; // Category keywords to hide from search results (e.g. '伦理')
 }
 
 import { exportSettings, importSettings, SEARCH_HISTORY_KEY, WATCH_HISTORY_KEY } from './settings-helpers';
@@ -130,6 +134,8 @@ function getDefaultAppSettings(): AppSettings {
     danmakuOpacity: 0.7,
     danmakuFontSize: 20,
     danmakuDisplayArea: 0.5,
+    locale: 'zh-CN',
+    blockedCategories: [],
   };
 }
 
@@ -212,6 +218,8 @@ export const settingsStore = {
         danmakuOpacity: typeof parsed.danmakuOpacity === 'number' ? parsed.danmakuOpacity : 0.7,
         danmakuFontSize: typeof parsed.danmakuFontSize === 'number' ? parsed.danmakuFontSize : 20,
         danmakuDisplayArea: typeof parsed.danmakuDisplayArea === 'number' ? parsed.danmakuDisplayArea : 0.5,
+        locale: parsed.locale === 'zh-TW' ? 'zh-TW' : 'zh-CN',
+        blockedCategories: Array.isArray(parsed.blockedCategories) ? parsed.blockedCategories : [],
       };
     } catch {
       // Even if localStorage fails, we should return defaults + ENV subscriptions

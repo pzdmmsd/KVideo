@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { settingsStore, getDefaultPremiumSources, type SortOption, type SearchDisplayMode, type ProxyMode } from '@/lib/store/settings-store';
+import { settingsStore, getDefaultPremiumSources, type SortOption, type SearchDisplayMode, type ProxyMode, type LocaleOption } from '@/lib/store/settings-store';
 import { premiumModeSettingsStore } from '@/lib/store/premium-mode-settings';
 import type { VideoSource } from '@/lib/types';
 
@@ -15,6 +15,7 @@ export function usePremiumSettingsPage() {
     const [fullscreenType, setFullscreenType] = useState<'auto' | 'native' | 'window'>('auto');
     const [proxyMode, setProxyMode] = useState<ProxyMode>('retry');
     const [rememberScrollPosition, setRememberScrollPosition] = useState(true);
+    const [locale, setLocale] = useState<LocaleOption>('zh-CN');
 
     // Danmaku settings
     const [danmakuApiUrl, setDanmakuApiUrl] = useState('');
@@ -22,10 +23,14 @@ export function usePremiumSettingsPage() {
     const [danmakuFontSize, setDanmakuFontSize] = useState(20);
     const [danmakuDisplayArea, setDanmakuDisplayArea] = useState(0.5);
 
+    // Content filter
+    const [blockedCategories, setBlockedCategories] = useState<string[]>([]);
+
     useEffect(() => {
         // Sources come from main settings store
         const settings = settingsStore.getSettings();
         setPremiumSources(settings.premiumSources || []);
+        setLocale(settings.locale);
 
         // Mode-specific settings come from premium mode settings store
         const modeSettings = premiumModeSettingsStore.getSettings();
@@ -38,6 +43,9 @@ export function usePremiumSettingsPage() {
         setDanmakuOpacity(modeSettings.danmakuOpacity);
         setDanmakuFontSize(modeSettings.danmakuFontSize);
         setDanmakuDisplayArea(modeSettings.danmakuDisplayArea);
+
+        // blockedCategories is global
+        setBlockedCategories(settings.blockedCategories || []);
     }, []);
 
     // --- Source management (uses main settingsStore) ---
@@ -105,6 +113,13 @@ export function usePremiumSettingsPage() {
         savePremiumModeSetting({ rememberScrollPosition: enabled });
     };
 
+    const handleLocaleChange = (newLocale: LocaleOption) => {
+        setLocale(newLocale);
+        // Locale is a global setting, save to main store
+        const currentSettings = settingsStore.getSettings();
+        settingsStore.saveSettings({ ...currentSettings, locale: newLocale });
+    };
+
     // --- Danmaku settings handlers ---
 
     const handleDanmakuApiUrlChange = (url: string) => {
@@ -126,6 +141,12 @@ export function usePremiumSettingsPage() {
     const handleDanmakuDisplayAreaChange = (value: number) => {
         setDanmakuDisplayArea(value);
         savePremiumModeSetting({ danmakuDisplayArea: value });
+    };
+
+    const handleBlockedCategoriesChange = (categories: string[]) => {
+        setBlockedCategories(categories);
+        const currentSettings = settingsStore.getSettings();
+        settingsStore.saveSettings({ ...currentSettings, blockedCategories: categories });
     };
 
     return {
@@ -151,6 +172,8 @@ export function usePremiumSettingsPage() {
         handleFullscreenTypeChange,
         handleProxyModeChange,
         handleRememberScrollPositionChange,
+        locale,
+        handleLocaleChange,
         // Danmaku settings
         danmakuApiUrl,
         handleDanmakuApiUrlChange,
@@ -160,5 +183,7 @@ export function usePremiumSettingsPage() {
         handleDanmakuFontSizeChange,
         danmakuDisplayArea,
         handleDanmakuDisplayAreaChange,
+        blockedCategories,
+        handleBlockedCategoriesChange,
     };
 }

@@ -9,6 +9,8 @@ import { EpisodeList } from '@/components/player/EpisodeList';
 import { PlayerError } from '@/components/player/PlayerError';
 import { SourceInfo } from '@/components/player/EpisodeList';
 import type { VideoSource } from '@/lib/types';
+import type { VideoResolutionInfo } from '@/components/player/hooks/useVideoResolution';
+import { useResolutionProbe } from '@/lib/hooks/useResolutionProbe';
 import { useVideoPlayer } from '@/lib/hooks/useVideoPlayer';
 import { useHistory } from '@/lib/store/history-store';
 import { FavoritesSidebar } from '@/components/favorites/FavoritesSidebar';
@@ -18,6 +20,7 @@ import { settingsStore } from '@/lib/store/settings-store';
 import { premiumModeSettingsStore } from '@/lib/store/premium-mode-settings';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { getSourceName } from '@/lib/utils/source-names';
+import { retrieveGroupedSources, storeGroupedSources } from '@/lib/utils/grouped-sources-cache';
 
 function PlayerContent() {
   const searchParams = useSearchParams();
@@ -29,7 +32,9 @@ function PlayerContent() {
   const source = searchParams.get('source');
   const title = searchParams.get('title');
   const episodeParam = searchParams.get('episode');
+  // Support both legacy 'groupedSources' (full JSON) and new 'gs' (sessionStorage key)
   const groupedSourcesParam = searchParams.get('groupedSources');
+  const gsKey = searchParams.get('gs');
 
   // Track settings - use mode-specific store
   const modeStore = isPremium ? premiumModeSettingsStore : settingsStore;
@@ -44,6 +49,24 @@ function PlayerContent() {
   useEffect(() => {
     setIsReversed(modeStore.getSettings().episodeReverseOrder);
   }, []);
+
+  // Migrate legacy long groupedSources URL to short gs key
+  useEffect(() => {
+    if (groupedSourcesParam && !gsKey) {
+      try {
+        const data = JSON.parse(groupedSourcesParam);
+        if (Array.isArray(data) && data.length > 0) {
+          const newKey = storeGroupedSources(data);
+          if (newKey) {
+            const params = new URLSearchParams(searchParams.toString());
+            params.delete('groupedSources');
+            params.set('gs', newKey);
+            router.replace(`/player?${params.toString()}`, { scroll: false });
+          }
+        }
+      } catch { /* ignore parse errors */ }
+    }
+  }, []); // Run once on mount
 
   // Redirect if no video ID or source
   if (!videoId || !source) {
@@ -74,7 +97,12 @@ function PlayerContent() {
 
   const groupedSources = useMemo<SourceInfo[]>(() => {
     let sources: SourceInfo[] = [];
-    if (groupedSourcesParam) {
+
+    // Try sessionStorage cache first (new short URL), then fall back to URL param (legacy)
+    if (gsKey) {
+      const cached = retrieveGroupedSources(gsKey);
+      if (cached) sources = cached;
+    } else if (groupedSourcesParam) {
       try {
         sources = JSON.parse(groupedSourcesParam);
       } catch {
@@ -108,7 +136,7 @@ function PlayerContent() {
     }
 
     return sources;
-  }, [groupedSourcesParam, source, videoId, videoData?.vod_pic, discoveredSources]);
+  }, [gsKey, groupedSourcesParam, source, videoId, videoData?.vod_pic, discoveredSources]);
 
   // Wire up the source unavailable handler now that groupedSources is defined
   sourceUnavailableRef.current = () => {
@@ -131,7 +159,13 @@ function PlayerContent() {
     params.set('source', best.source);
     params.set('title', title || '');
     if (episodeParam) params.set('episode', episodeParam);
-    if (groupedSourcesParam) params.set('groupedSources', groupedSourcesParam);
+    // Use short gs key for grouped sources
+    if (gsKey) {
+      params.set('gs', gsKey);
+    } else if (groupedSources.length > 1) {
+      const newKey = storeGroupedSources(groupedSources);
+      if (newKey) params.set('gs', newKey);
+    }
     if (isPremium) params.set('premium', '1');
     router.replace(`/player?${params.toString()}`, { scroll: false });
   };
@@ -150,7 +184,10 @@ function PlayerContent() {
 
     // Check if existing grouped sources already have full info (pic + latency)
     let existingSources: SourceInfo[] = [];
-    if (groupedSourcesParam) {
+    if (gsKey) {
+      const cached = retrieveGroupedSources(gsKey);
+      if (cached) existingSources = cached;
+    } else if (groupedSourcesParam) {
       try { existingSources = JSON.parse(groupedSourcesParam); } catch {}
     }
     // Always fetch alternatives if there's a pending fallback (source unavailable)
@@ -209,6 +246,7 @@ function PlayerContent() {
                     latency: match.latency,
                     pic: match.vod_pic,
                     typeName: match.type_name,
+                    remarks: match.vod_remarks,
                   });
                   // Update state incrementally
                   setDiscoveredSources([...found]);
@@ -223,11 +261,20 @@ function PlayerContent() {
     })();
 
     return () => controller.abort();
-  }, [title, source, groupedSourcesParam, isPremium]);
+  }, [title, source, gsKey, groupedSourcesParam, isPremium]);
 
   // Track current source for switching
   const [currentSourceId, setCurrentSourceId] = useState(source);
   const playerTimeRef = useRef(0);
+
+  // Track detected video resolution from the player
+  const [detectedResolution, setDetectedResolution] = useState<VideoResolutionInfo | null>(null);
+
+  // Probe resolution for all grouped sources (not just the playing one)
+  const probeList = useMemo(() => {
+    return groupedSources.map(s => ({ id: s.id, source: s.source }));
+  }, [groupedSources]);
+  const { resolutions: sourceResolutions } = useResolutionProbe(probeList);
 
   // Add initial history entry when video data is loaded
   useEffect(() => {
@@ -327,6 +374,7 @@ function PlayerContent() {
                 videoTitle={videoData?.vod_name || title || ''}
                 episodeName={videoData?.episodes?.[currentEpisode]?.name || ''}
                 externalTimeRef={playerTimeRef}
+                onResolutionDetected={setDetectedResolution}
               />
               <div className="hidden lg:block">
                 <VideoMetadata
@@ -389,6 +437,8 @@ function PlayerContent() {
                     onToggleReverse={handleToggleReverse}
                     sources={groupedSources.length > 0 ? groupedSources : undefined}
                     currentSource={currentSourceId || source || ''}
+                    currentResolution={detectedResolution}
+                    sourceResolutions={sourceResolutions}
                     onSourceChange={(newSource) => {
                       const params = new URLSearchParams();
                       params.set('id', String(newSource.id));
@@ -400,12 +450,13 @@ function PlayerContent() {
                       if (playerTimeRef.current > 1) {
                         params.set('t', Math.floor(playerTimeRef.current).toString());
                       }
-                      // Pass all known sources so switching persists
+                      // Store all known sources using short gs key
                       const allSources = groupedSources.length > 0 ? groupedSources : [];
                       if (allSources.length > 1) {
-                        params.set('groupedSources', JSON.stringify(allSources));
-                      } else if (groupedSourcesParam) {
-                        params.set('groupedSources', groupedSourcesParam);
+                        const newKey = storeGroupedSources(allSources);
+                        if (newKey) params.set('gs', newKey);
+                      } else if (gsKey) {
+                        params.set('gs', gsKey);
                       }
                       if (isPremium) {
                         params.set('premium', '1');
